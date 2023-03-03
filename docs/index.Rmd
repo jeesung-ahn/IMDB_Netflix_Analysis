@@ -1,0 +1,533 @@
+---
+title: "Does International Collaboration Help IMDB Ratings? (focusing on Netflix)"
+author: "Jeesung Ahn"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    highlight: espresso
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+ pdf_document:
+    toc: yes
+---
+
+
+* Research Question
+
+1~2 background sentence.
+International collaborations may open up more opportunities to make contents more approachable for global audience. It may mean diverse perspective on the production process as well as more capital and investment. In that case, would having multiple countries collaborating on one title be associated with higher viewer ratings? I also expand the question to roughly estimate the relationship between revenue and imdb ratings (although there must be a lot of covariates such as covid 19 pandemic and more demands on streaming services). I also specifically narrow down the scope to Netflix Original movies and see how its ratings are changing as Netflix accrues more subscribers worldwide and see whether internaiontal collaboration is related to higher ratings. 
+
+explanation on IMDB ratings
+- 6.8 in general, ranging from 1~10 
+- 
+
+* Summary of Findings and Insight
+- X countries have produced content on Netflix 
+- X countries have produced Netflix Original movies
+- more international collaboration = higher ratings on imdb (both in general and netflix originals)
+- more international collaboration = more votes on imdb which can be a proxy for viewer counts -- make content more approachable to global audience
+
+- netflix originals are getting lower ratings -- need more data and investigations to examine why -- the reduction is not necessarily associated with revenue, profit 
+
+
+- more research (e.g., user interviews, reviews) and data needed to specify what drove the effect
+
+* Dataset
+- netflix data from https://www.kaggle.com/datasets/shivamb/netflix-shows
+-imdb data from https://www.imdb.com/interfaces/
+- netflix original data (06.01.2021) https://www.kaggle.com/datasets/luiscorter/netflix-original-films-imdb-scores 
+- https://www.businessofapps.com/data/netflix-statistics/
+*caveat: all data is based on titles that are available on Netflix as of mid-2021
+
+```{r setup}
+require(tidyr, quietly = TRUE)
+require(dplyr, quietly = TRUE)
+require(ggplot2, quietly = TRUE)
+require(ggrepel, quietly = TRUE)
+require(stringr, quietly = TRUE)
+require(reshape2, quietly = TRUE)
+require(formattable, quietly = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+options(scipen = 999)
+
+```
+
+# Data Cleaning & Exploratory Data Analysis 
+```{r, warning=FALSE,message=FALSE}
+# Load data 
+
+netflix<-read.csv('movies/netflix_movies_shows_titles.csv')
+netflix_originals<-read.csv('movies/NetflixOriginals.csv')
+netflix_originals=merge(netflix_originals,netflix %>% select(Title,country),by=c('Title'))
+
+imdb_titles<-read.csv('movies/imdb.title.basics.csv')
+imdb_ratings<-read.csv('movies/imdb.title.ratings.csv')
+
+# Clean data
+imdb_titles['startYear'][imdb_titles['startYear']=='\\N']<-NA
+imdb_titles['endYear'][imdb_titles['endYear']=='\\N']<-NA
+imdb_titles['runtimeMinutes'][imdb_titles['runtimeMinutes']=='\\N']<-NA
+imdb_titles=imdb_titles %>% mutate(startYear=as.numeric(startYear),endYear=as.numeric(endYear),runtimeMinutes=as.numeric(runtimeMinutes))
+
+imdb_df<-merge(imdb_titles,imdb_ratings, by=c('tconst'))
+
+yr=c()
+for (i in 1:dim(netflix['date_added'])[1]){yr[i]=as.numeric(str_split_i(netflix['date_added'][i,],"-",1))}
+netflix=netflix %>% mutate(year_added_to_netflix=yr) # add a 'year added to netflix' column
+netflix['country'][netflix['country']=='']<-NA # blank to NA
+
+
+yr=c()
+for (i in 1:dim(netflix_originals['Premiere'])[1]){yr[i]=as.numeric(str_split_i(netflix_originals['Premiere'][i,],"-",1))}
+netflix_originals=netflix_originals %>% mutate(premiere_year=yr) # add a 'year added to netflix' column
+netflix_originals['country'][netflix_originals['country']=='']<-NA # blank to NA
+
+
+# merge netflix titles with imdb ratings
+netflix_ratings<-merge(netflix, imdb_df,by.x=c('Title','release_year'),by.y=c('primaryTitle','startYear')) 
+netflix_ratings=netflix_ratings %>% distinct(Title,director,release_year,.keep_all=TRUE) # remove duplicates
+
+# sum(is.na(netflix_ratings$country)) # check the number of NAs (missing country data) N=118
+```
+
+# Which countries are producing content on Netflix?
+## Where do the movies/shows come from?  (rank)
+*caveat: data is based on titles that are available on Netflix as of mid-2021
+- movies/shows on Netflix were produced by 122 different countries
+
+- number_of_countries
+1	7487			
+2	873			
+3	273			
+4	114			
+5 37
+6+	23 (max number 12)
+			
+6	14			
+7	5			
+8	2			
+9 0
+10	1			
+11 0
+12	1	
+
+```{r, warning=FALSE,message=FALSE}
+# sum(is.na(netflix$country)) # check the number of NAs (missing country data) N=831
+
+# Extract country data
+
+temp=netflix %>% mutate(country1=str_split_i(country,",",1),
+                           country2=str_split_i(country,",",2),
+                           country3=str_split_i(country,",",3),
+                           country4=str_split_i(country,",",4),
+                           country5=str_split_i(country,",",5),
+                           country6=str_split_i(country,",",6),
+                           country7=str_split_i(country,",",7),
+                           country8=str_split_i(country,",",8),
+                           country9=str_split_i(country,",",9),
+                        country10=str_split_i(country,",",10), 
+                        country11=str_split_i(country,",",11),
+                        country12=str_split_i(country,",",12)) %>%
+  select(Title,country1,country2,country3,country4,country5,country6,country7,country8,country9,country10,country11, country12,year_added_to_netflix,Genre) 
+
+netflix_long_df<-melt(temp,id=c("Title","year_added_to_netflix","Genre"),na.rm=T) %>% arrange(Title)
+netflix_long_df = netflix_long_df %>% mutate(country=str_trim(value,side=c("left")))
+
+# Data engineering
+netflix_long_df[459,]['country']<-"United States" 
+netflix_long_df[2639,]['country']<-"United Kingdom"
+# which(netflix_long_df['country']=='')
+netflix_long_df<-netflix_long_df[-c(1748,1990,2620,2934,3571,8661,9548),] # remove blanks
+
+# Rank which country produced most shows/movies on Neflix
+# unique(netflix_long_df$country) # movies/shows on Netflix were produced by 122 different countries
+country_count=netflix_long_df %>% count(country) %>% arrange(desc(n)) %>%
+  mutate(perc=round(`n`/sum(`n`),3)) %>% mutate(percentage = scales::percent(perc))
+
+# netflix_long_df %>% group_by(country) %>% count()  %>%
+#   ungroup() %>%
+#  mutate(perc=round(`n`/sum(`n`),2)) %>%  mutate(percentage = scales::percent(perc)) %>% arrange(desc(perc))
+
+plot_df=temp%>% 
+  mutate(number_of_countries=ifelse(is.na(country2),1,
+                              ifelse(is.na(country3),2,
+                                     ifelse(is.na(country4),3,
+                                            ifelse(is.na(country5),4,
+                                                   ifelse(is.na(country6),5,6
+                                                        ))))))
+
+```
+
+```{r,warning=FALSE,message=FALSE}
+plot_df=plot_df %>% count(number_of_countries)
+
+ggplot(plot_df, aes(x=number_of_countries,y=n,fill=n))+ geom_col(fill = "black") +
+  geom_text(aes(label=n,fontface="bold"), vjust = -0.5, size =3,color="#E50914",family = 'AppleGothic') + theme_bw() +theme_classic()+
+  xlab(c("Number of Countries"))+ylab(c("Count"))+ 
+  scale_x_discrete(limits=c(seq(1,6,1)))+
+  ggtitle("Number of Countries that Collaborated on a Movie/Show on Netflix")+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono'),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1))
+
+```
+```{r,warning=FALSE,message=FALSE}
+
+country_count=country_count %>% mutate("Production Country"=country, "Number of Movies/Shows"=n,"Percentage (%)"=perc*100 )
+
+# plot distribution of countries in table 
+formattable(country_count %>% select("Production Country", "Number of Movies/Shows", "Percentage (%)"), align=c("r","r","r"),
+            list(`Number of Movies/Shows`=color_bar("#E50914"),`Percentage (%)`=color_bar("gray"))) 
+```
+
+
+## Is international collaboration associated with higher IMDB ratings?
+
+- When more countries are included in production, the movie/show is more likely to get higher ratings on IMDB. 
+
+```{r,warning=FALSE,message=FALSE}
+# Data preparation
+
+# extract country information
+temp=netflix_ratings %>% mutate(country1=str_split_i(country,",",1),
+                           country2=str_split_i(country,",",2),
+                           country3=str_split_i(country,",",3),
+                           country4=str_split_i(country,",",4),
+                           country5=str_split_i(country,",",5),
+                           country6=str_split_i(country,",",6),
+                           country7=str_split_i(country,",",7),
+                           country8=str_split_i(country,",",8),country9=str_split_i(country,",",9))
+
+
+# sum(is.na(temp$country)) # 118 titles have no country information
+
+# sum(is.na(temp$country1)==FALSE) # 1799 movies/shows have 1 country involved
+# sum(is.na(temp$country2)==FALSE) # 318 movies/shows have 2 countries involved 
+# sum(is.na(temp$country3)==FALSE) # 115 movies/shows have 3 countries involved
+# sum(is.na(temp$country4)==FALSE) # 49 movies/shows have 4 countries involved
+# sum(is.na(temp$country5)==FALSE) # 13 movies/shows have 5 countries involved
+# sum(is.na(temp$country6)==FALSE) # 3 movies/shows have 6 countries involved
+# sum(is.na(temp$country7)==FALSE) # 4 movies/shows have 7 countries involved
+# sum(is.na(temp$country8)==FALSE) # 1 movies/shows have 8 countries involved 
+# sum(is.na(temp$country9)==FALSE) # 1 movies/shows have 12 countries involved (max number)
+
+
+temp=temp %>% 
+  select(Title,country,country1,country2,country3,country4,country5,country6,country7,country8,country9,
+         year_added_to_netflix,Genre,averageRating,numVotes) 
+
+nf_df_cleaned=temp%>% 
+  mutate(number_of_countries=ifelse(is.na(country2),1,
+                              ifelse(is.na(country3),2,
+                                     ifelse(is.na(country4),3,
+                                            ifelse(is.na(country5),4,
+                                                   ifelse(is.na(country6),5,6)))))) # 6 means 6 or more countries
+
+# U.S. vs. other countries (binary coding: other 0 vs. U.S. 1) (collab 1 vs. single country 0)
+nf_df_cleaned=nf_df_cleaned %>% mutate(collab_or_not = ifelse(number_of_countries>=2,1,0),
+                                      us_or_not=ifelse(grepl('United States',country),1,0))
+```
+
+```{r,warning=FALSE,message=FALSE}
+# when multiple countries are involved in producing a show/movie, it is more likely to get higher ratings on IMDB; highly likely to get more viewers
+
+nf_df_cleaned %>% 
+    summarise( # summarise operation by group
+        Mean_Rating= mean(averageRating),
+        Standard_Deviation= sd(averageRating),
+        Max_Rating=max(averageRating),
+        Min_Rating=min(averageRating)
+    )
+
+nf_df_cleaned[which(nf_df_cleaned$averageRating==max(nf_df_cleaned$averageRating))[1],] # highest rating
+nf_df_cleaned[which(nf_df_cleaned$averageRating==max(nf_df_cleaned$averageRating))[2],] # highest rating
+nf_df_cleaned[which(nf_df_cleaned$averageRating==max(nf_df_cleaned$averageRating))[3],] # highest rating
+nf_df_cleaned[which(nf_df_cleaned$averageRating==min(nf_df_cleaned$averageRating))[1],] # lowest rating
+```
+
+### Average Ratings 
+
+```{r,warning=FALSE,message=FALSE}
+
+ggplot(data=nf_df_cleaned,aes(x=number_of_countries,y=averageRating))+
+  geom_smooth(method=lm,colour="#E50914",size=2,se=FALSE)+
+  scale_x_discrete(limits=c(seq(1,6,1))) +  coord_cartesian(ylim=c(6.5,7.2))+
+  theme_bw()+theme_classic()+
+  labs(x="Number of Countries", y="Average IMDb Ratings", title="More International Collaborations Predict Higher Ratings on IMDb")+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,size=15,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono',angle=45),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1))
+
+summary(lm(numVotes~number_of_countries,data=nf_df_cleaned)) # proxy for the number of viewers
+cor.test(nf_df_cleaned$numVotes,nf_df_cleaned$averageRating) # titles that have more votes tend to score higher on ratings
+
+```
+### Number of Votes 
+```{r,warning=FALSE,message=FALSE}
+
+ggplot(data=nf_df_cleaned,aes(x=number_of_countries,y=numVotes))+
+  geom_smooth(method=lm,colour="#E50914",size=2,se=FALSE)+
+  scale_x_discrete(limits=c(seq(1,6,1)))+  theme_bw()+theme_classic()+
+  labs(x="Number of Countries", y="Number of Votes", title="More International Collaborations Predict More Votes on IMDb")+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,size=15,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono',angle=45),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1))
+
+summary(lm(numVotes~number_of_countries,data=nf_df_cleaned)) # proxy for the number of viewers
+summary(lm(averageRating~number_of_countries,data=nf_df_cleaned)) # proxy for the number of viewers
+
+cor.test(nf_df_cleaned$numVotes,nf_df_cleaned$averageRating) # titles that have more votes tend to score higher on ratings
+
+```
+
+# How about Netflix Originals, specifically? {.tabset}
+
+- Out of 504 movies ...
+- Netflix original movies were produced by 43 different countries
+- 430 movies/shows have 1 country involved
+- 59 movies/shows have 2 countries involved 
+- 14 movies/shows have 3 countries involved
+- 1 movies/shows have 4 countries involved
+
+## Where did the movies come from? 
+- more prominent dominance of U.S
+
+```{r,warning=FALSE,message=FALSE}
+# Data Preparation
+# Extract country data
+temp=netflix_originals %>% mutate(country1=str_split_i(country,",",1),
+                           country2=str_split_i(country,",",2),
+                           country3=str_split_i(country,",",3),
+                           country4=str_split_i(country,",",4))
+temp=temp %>% distinct(Title,Genre,Language,.keep_all=TRUE) # remove duplicates
+
+
+temp1=temp %>% 
+  select(Title,country1,country2,country3,country4,premiere_year,IMDB.Score,Genre) 
+
+netflix_originals_long_df<-melt(temp1,id=c("Title","premiere_year","IMDB.Score","Genre"),na.rm=T) %>% arrange(Title)
+netflix_originals_long_df = netflix_originals_long_df %>% mutate(country=str_trim(value,side=c("left")))
+
+# Rank which country produced most Netflix Original movies
+# unique(netflix_originals_long_df$country) # Netflix original movies were produced by 43 different countries
+
+country_count=netflix_originals_long_df %>% count(country) %>% arrange(desc(n)) %>%
+  mutate(perc=round(`n`/sum(`n`),3)) %>% mutate(percentage = scales::percent(perc))
+
+# plot table
+formattable(country_count %>% select(country,n,percentage), list(`n`=color_bar(color="lightblue")))
+
+
+nf_originals_df_cleaned=temp%>% 
+  mutate(number_of_countries=ifelse(is.na(country2),1,
+                              ifelse(is.na(country3),2,
+                                     ifelse(is.na(country4),3,4)))) # 6 means 6 or more countries
+
+# U.S. vs. other countries (binary coding: other 0 vs. U.S. 1) (collab 1 vs. single country 0)
+nf_originals_df_cleaned=nf_originals_df_cleaned %>% mutate(collab_or_not = ifelse(number_of_countries>=2,1,0),
+                                      us_or_not=ifelse(grepl('United States',country),1,0))
+
+originals_country_count=netflix_originals_long_df %>% count(country) %>% 
+  arrange(desc(n)) %>%mutate(perc=round(`n`/sum(`n`),3)) %>% mutate(percentage = scales::percent(perc))
+
+originals_country_count=originals_country_count %>% mutate("Production Country"=country, 
+                                                           "Number of Movies/Shows"=n,"Percentage (%)"=perc*100 )
+
+```
+
+```{r,warning=FALSE,message=FALSE}
+plot_originals_df<-nf_originals_df_cleaned %>% count(number_of_countries)
+
+ggplot(plot_originals_df, aes(x=number_of_countries,y=n,fill=n))+ geom_col(fill = "black") +
+  geom_text(aes(label=n,fontface="bold"), vjust = -0.5, size =3,color="#E50914",family = 'AppleGothic') + theme_bw() +theme_classic()+
+  xlab(c("Number of Countries"))+ylab(c("Count"))+ 
+  scale_x_discrete(limits=c(seq(1,4,1)))+
+  ggtitle("Number of Countries that Collaborated on a Netflix Original movie")+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono'),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=3,hjust=1))
+
+```
+
+```{r,warning=FALSE,message=FALSE}
+# plot distribution of countries in table 
+formattable(originals_country_count %>% select("Production Country", "Number of Movies/Shows", "Percentage (%)"), align=c("r","r","r"),
+            list(`Number of Movies/Shows`=color_bar("#E50914"),`Percentage (%)`=color_bar("gray"))) 
+
+```
+
+## Is international collaboration associated with higher IMDB ratings? {.tabset}
+
+- when multiple countries produce a movie/show, that movie/show is likely to get significantly higher IMDB ratings (more countries=higher)
+- highest ratings: ; lowest rating:
+
+### Netflix Originals vs. Overall Content on Netflix (IMDb Ratings)
+```{r,warning=FALSE,message=FALSE}
+
+nf_originals_df_cleaned %>% 
+    summarise( # summarise operation by group
+        Mean_Rating= mean(IMDB.Score),
+        Standard_Deviation= sd(IMDB.Score),
+        Max_Rating=max(IMDB.Score),
+        Min_Rating=min(IMDB.Score)
+    )
+
+# nf_originals_df_cleaned[which(nf_originals_df_cleaned$IMDB.Score==max(nf_originals_df_cleaned$IMDB.Score))[1],] # highest rating
+# nf_originals_df_cleaned[which(nf_originals_df_cleaned$IMDB.Score==min(nf_originals_df_cleaned$IMDB.Score))[1],] # lowest rating
+
+# t.test(nf_originals_df_cleaned$IMDB.Score,nf_df_cleaned$averageRating)  # netflix originals have significantly lower ratings, compared to all contents available on Netflix combined 
+
+
+bar_df<-data.frame(group=c('Netflix Overall','Netflix Originals'),Average_Ratings=c(round(mean(nf_df_cleaned$averageRating),2),round(mean(nf_originals_df_cleaned$IMDB.Score),2)))
+
+
+ggplot(bar_df, aes(x=group,y=Average_Ratings,fill=Average_Ratings))+ 
+  geom_col(fill = "black",width=0.5) + 
+  coord_cartesian(ylim=c(5,7))+
+  geom_text(aes(label=Average_Ratings,fontface="bold"), vjust = -0.5, size =3,color="#E50914",family = 'AppleGothic') +
+  theme_bw() +theme_classic()+ylab(c("Average IMDb Ratings"))+ 
+  ggtitle("IMDb Ratings: Netflix Originals vs. Overall Content on Netflix")+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono'),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=3,hjust=1))
+
+
+```
+
+### Change in IMDb Ratings 
+```{r,warning=FALSE,message=FALSE}
+
+# nf_originals_df_cleaned %>% group_by(premiere_year) %>% summarise(Mean_IMDb_Ratings=mean(IMDB.Score)) # netflix originals
+# nf_df_cleaned %>% select(year_added_to_netflix,averageRating,numVotes,number_of_countries) %>% group_by(year_added_to_netflix) %>% summarise(Average_IMDb_Ratings=mean(averageRating)) # all content 
+
+usage_stats<-data.frame(year=c(2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022),
+                        revenue_bn=c(3.1,3.5,4.3,5.4,6.7,8.8,11.6,15.7,20.1,24.9,29.6,31.6),
+                        net_income=c(225,17,112,266,122,188,560,1211,1867,2761,5116,4491),
+                        content_spend_bn=c(NA,NA,NA,NA,NA,6.88,8.91,12,13.9,11.8,17.7,16.8),
+                        subscribers_mm=c(21.5,25.71,35.63,47.99,62.71,79.9,99.04,124.35,151.56,192.95,209,220.6),
+                        netflix_originals_imdb=c(NA,NA,NA,6.4,6.88,6.34,6.29,6.25,6.22,6.10,6.04,NA),
+                        overall_imdb=c(c(6.5,NA, 8.1,7.56,7.02, 6.75,6.72,6.8,6.72,6.70, 6.75,NA)))
+
+
+
+imdb_average_ratings<-data.frame(year=c(2014,2015,2016,2017,2018,2019,2020,2021),
+                                 group=c(rep("Netflix Originals",8),rep("Overall on Netflix",8)),
+                                 ratings=c(c(6.4,6.88,6.34,6.29,6.25,6.22,6.10,6.04),c(7.56,7.02, 6.75,6.72,6.8,6.72,6.70,6.75)))
+
+ggplot(data=imdb_average_ratings, aes(x=year,y=ratings,fill=group))+
+  geom_line(aes(color=group),size=2,arrow=arrow())+scale_x_discrete(limits=c(seq(2014,2021,1)))+ scale_color_manual(values=c("#E50914","black"))+
+  theme_bw() + 
+  labs(x="Year", y="Average IMDb Rating", title="Average IMDb Ratings by Year",color=NULL)+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,size=15,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono'),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1)) 
+```
+
+### International Collaboration and IMDb Ratings 
+```{r,warning=FALSE,message=FALSE}
+summary(lm(IMDB.Score~number_of_countries,data=nf_originals_df_cleaned)) 
+
+ggplot(data=nf_originals_df_cleaned,aes(x=number_of_countries,y=IMDB.Score))+
+  geom_smooth(method=lm,colour="#E50914",size=2,se=FALSE)+
+  scale_x_discrete(limits=c(seq(1,6,1))) +  coord_cartesian(ylim=c(6,7))+
+  theme_bw()+theme_classic()+
+  labs(x="Number of Countries", y="Average IMDb Ratings", title="International Collaborations Predict Higher Ratings")+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,size=15,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono',angle=45),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1))
+
+
+# nf_originals_df_cleaned %>% group_by(premiere_year) %>% summarise(average_n_of_countries=mean(number_of_countries))
+
+# netflix_originals_long_df %>% group_by(premiere_year) # plot which countries are involved in producing Netflix Originals each year
+
+```
+
+# Would IMDb Ratings be correlated with financial statistics? 
+
+- although revenue, money spent on content, number of subscribers have been growing, imdb ratings on netflix originals decrease. interestingly, statistically significant relationship (diverse qudience? don't know causality, many other confounding factors), average ratings don't correlate with revenue 
+
+```{r,warning=FALSE,message=FALSE}
+# nf_originals_df_cleaned %>% group_by(premiere_year) %>% summarise(Mean_IMDb_Ratings=mean(IMDB.Score)) # netflix originals
+# nf_df_cleaned %>% select(year_added_to_netflix,averageRating,numVotes,number_of_countries) %>% group_by(year_added_to_netflix) %>% summarise(Average_IMDb_Ratings=mean(averageRating)) # all content 
+usage_stats<-data.frame(year=c(2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022),
+                        revenue_bn=c(3.1,3.5,4.3,5.4,6.7,8.8,11.6,15.7,20.1,24.9,29.6,31.6),
+                        net_income_bn=c(0.225,0.017,0.112,0.266,0.122,0.188,0.560,1.211,1.867,2.761,5.116,4.491),
+                        content_spend_bn=c(NA,NA,NA,NA,NA,6.88,8.91,12,13.9,11.8,17.7,16.8),
+                        subscribers_mm=c(21.5,25.71,35.63,47.99,62.71,79.9,99.04,124.35,151.56,192.95,209,220.6),
+                        netflix_originals_imdb=c(NA,NA,NA,6.4,6.88,6.34,6.29,6.25,6.22,6.10,6.04,NA),
+                        overall_imdb=c(c(6.5,NA, 8.1,7.56,7.02, 6.75,6.72,6.8,6.72,6.70, 6.75,NA)))
+
+
+finance<-data.frame(year=c(2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022),
+                    group=c(rep("Revenue ($B)",12),rep("Net Income ($B)",12),rep("Content Spend ($B)",12)),
+                    money=c(c(3.1,3.5,4.3,5.4,6.7,8.8,11.6,15.7,20.1,24.9,29.6,31.6),c(0.225,0.017,0.112,0.266,0.122,0.188,0.560,1.211,1.867,2.761,5.116,4.491),c(NA,NA,NA,NA,NA,6.88,8.91,12,13.9,11.8,17.7,16.8)))
+                    
+
+
+ggplot(data=finance, aes(x=year,y=money,fill=group))+
+  geom_line(aes(color=group),size=2,arrow=arrow())+scale_x_discrete(limits=c(seq(2011,2022,1)))+
+  theme_bw() + 
+  labs(x="Year", y="Billions (USD)", title="Netflix financial Statistics",color=NULL)+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,size=15,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono'),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1)) 
+
+# cor.test(usage_stats$revenue_bn,usage_stats$netflix_originals_imdb)
+# cor.test(usage_stats$content_spend_bn,usage_stats$netflix_originals_imdb)
+# cor.test(usage_stats$subscribers_mm,usage_stats$netflix_originals_imdb)
+
+# cor.test(usage_stats$revenue_bn,usage_stats$overall_imdb)
+# cor.test(usage_stats$content_spend_bn,usage_stats$overall_imdb)
+# cor.test(usage_stats$subscribers_mm,usage_stats$overall_imdb)
+
+
+```
+
+### Change in IMDb Ratings 
+```{r,warning=FALSE,message=FALSE}
+
+
+imdb_average_ratings<-data.frame(year=c(2014,2015,2016,2017,2018,2019,2020,2021),
+                                 group=c(rep("Netflix Originals",8),rep("Overall on Netflix",8)),
+                                 ratings=c(c(6.4,6.88,6.34,6.29,6.25,6.22,6.10,6.04),c(7.56,7.02, 6.75,6.72,6.8,6.72,6.70,6.75)))
+
+ggplot(data=imdb_average_ratings, aes(x=year,y=ratings,fill=group))+
+  geom_line(aes(color=group),size=2,arrow=arrow())+scale_x_discrete(limits=c(seq(2014,2021,1)))+ scale_color_manual(values=c("#E50914","black"))+
+  theme_bw() + 
+  labs(x="Year", y="Average IMDb Rating", title="Average IMDb Ratings by Year",color=NULL)+
+  theme(plot.title = element_text(hjust = 0.5,vjust=2.5,size=15,face="bold",family = 'AppleGothic'),
+        axis.text.x = element_text(size=10, family = 'mono'),
+        axis.text.y = element_text(size=10, family = 'mono'),
+        axis.title.x = element_text(size=10,face="bold", family = 'mono',hjust=1),
+        axis.title.y = element_text(size=10, face="bold",family = 'mono',vjust=1,hjust=1)) 
+```
+
+
+# Next steps
+-  need full history of data : Is it getting more diverse over time? --> don't have full history to assess this (shows that are still on Netflix as of mid2021)
+- change in number of countries involved
+
+- other measure than IDMB ratings to assess user experience
+- text mining review to figure out what is driving the decrease in average ratings 
+- missing data 
