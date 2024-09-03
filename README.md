@@ -1,28 +1,32 @@
-# 
+# Does International Collaboration Impact IMDB Ratings? (Focus on Netflix)
 
-![visualization](graphics/summary.png)
+For the project summary, visit [Project Summary]().
 
-Movies and TV shows can be made in more than one country. I have always found moveis and TV shows that have
+* Overview
+This project investigates the impact of international collaboration on IMDb ratings, focusing on Netflix content. The study analyzes whether movies and shows produced by multiple countries receive higher IMDb ratings and explores the relationship between these ratings and Netflix's financial performance.
 
-[IMDb](link) offers 
+* Key Findings:
+  * International Collaboration: Titles produced by multiple countries tend to have higher IMDb ratings and more votes, indicating broader global appeal.
+  ![Finding1](images/1.png)
+  ![Finding3](images/3.png)
+  ![Finding4](images/4.png)
 
-## What I did
-1. 
-2. 
-3. 
+  * Netflix Originals are mostly produced by the U.S., but international collaborations still occur.
+  ![Finding2](images/2.png)
 
-Below I summarize some of the main findings
+  * IMDb ratings for Netflix Originals have been declining, despite Netflix's growing revenue and subscriber base.
 
-## XX 
 
-![visualization](graphics/xx.png)
 
-##
+* Dataset
+  - Netflix Data: [Kaggle](https://www.kaggle.com/datasets/shivamb/netflix-shows)
+  - IMDB Data: [IMDB Interfaces](https://www.imdb.com/interfaces/)
+  - Netflix Original Data: [Kaggle](https://www.kaggle.com/datasets/luiscorter/netflix-original-films-imdb-scores)
+  - Financial Statistics: [Business of Apps](https://www.businessofapps.com/data/netflix-statistics/)
+  
+*Note: Data is based on titles available on Netflix as of mid-2021.*
 
-## 
-
-## 
-
-## Next steps
-- 
--
+* Next Steps:
+  * Explore alternative metrics to assess user experience.
+  * Use text mining on reviews to understand the decline in IMDb ratings.
+  * Investigate the role of international collaborations in shaping viewer perceptions over time.
