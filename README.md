@@ -1,6 +1,6 @@
 # Does International Collaboration Impact IMDB Ratings? (Focus on Netflix)
 
-For the project summary, visit [Project Summary]().
+For the project summary, visit [Project Summary](https://jeesung-ahn.github.io/docs/netflixanalysis.html).
 
 * Overview
 
